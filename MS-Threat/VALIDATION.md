@@ -1,75 +1,62 @@
-# Validation summary — MS Threat 1.0.7
+# MS Threat 1.0.8 validation report
 
-## Completed source and compatibility checks
+## Source validation
 
-- Confirmed the attached source release was OctoThreat 1.0.6.
-- Renamed the addon folder, TOC, Lua files, namespace, frames, visible branding, messages, and saved-variable declaration.
-- Confirmed `## Interface: 11200`, author `MoobStack`, and version `1.0.7`.
-- Confirmed TOC order: bootstrap, core, local provider, UI.
-- Parsed every addon and migration-bridge Lua file successfully with `texluac -p` as a structural syntax check.
-- Scanned for WoW 1.12.1-incompatible additions, including active `string.gmatch`, Lua length-operator usage, and Lua 5.1-style vararg forwarding; none were introduced.
-- Confirmed the addon uses no required companion folder for clean installations.
+- Parsed `MSThreat_Bootstrap.lua`, `MSThreat_Core.lua`, `MSThreat_Local.lua`, `MSThreat_UI.lua`, and the migration bridge successfully.
+- Confirmed `## Interface: 11200`.
+- Confirmed TOC source order: bootstrap, core, local provider, UI.
+- Confirmed primary and legacy slash-command registration.
+- Confirmed no dependency on modern Retail or current Classic APIs was introduced.
+- Confirmed no `string.gmatch`, Lua length-operator table counting, or unsupported vararg-forwarding syntax was introduced.
 
-## Branding and command checks
+## Mocked World of Warcraft 1.12.1 runtime validation
 
-- Confirmed `/msthreat`, `/mst`, and `/msthreatmeter` register as primary aliases.
-- Confirmed `/othreat` and `/octothreat` remain registered as legacy aliases.
-- Confirmed all five aliases route through one early bootstrap dispatcher.
-- Confirmed `MSThreat`, `MSThreat_CommandDispatch`, and MS-prefixed frame names are active.
-- Confirmed `OctoThreat` and `OctoThreat_CommandDispatch` remain documented runtime compatibility aliases.
-- Confirmed visible UI titles, chat prefixes, tooltips, status output, and help text use **MS Threat**.
-- Confirmed no server-specific promotional compatibility wording remains in current source or public documentation.
+A comprehensive harness completed 54 assertions, including:
 
-## Saved-data and profile migration checks
+- New and existing character-profile activation.
+- Independent profile widths and settings.
+- Automatic defaulting of the new `groupFallback` option on an existing profile.
+- Clearing native, server, and local transient rows during character switches.
+- Unrelated group-member combat producing `IDLE`, not `WAIT`.
+- Automatic expiry of a stale combat latch.
+- Immediate grouped roster rows for ordinary current-target combat.
+- `GROUP EST` selection and display.
+- Party melee and spell-damage attribution.
+- Group healing-threat estimation.
+- Rejection of combat messages for another target.
+- Elite-only exact server-query eligibility.
+- Compatible-server packet acceptance and provider priority.
+- Native absolute priority over server and local rows.
+- Native percentage priority over grouped local estimation.
+- Local-only mode during grouped combat.
+- Group-fallback disable behavior.
+- Solo-estimation regression behavior.
+- Configuration checkbox behavior.
+- Primary and legacy command aliases.
 
-A mocked WoW-style runtime exercised the packaged Lua source and verified:
+Separate startup/UI and migration harnesses validated:
 
-- Full initialization and configuration-window creation.
-- Deep-copy migration from `OctoThreatDB` into `MSThreatDB`.
-- Preservation of multiple existing realm-and-character profiles.
-- Preservation of independent character position, width, provider mode, and last-fight data.
-- Mage-to-rogue profile switching without profile leakage.
-- Existing MS-prefixed profile values take precedence over legacy values.
-- Missing profiles and keys are copied from the legacy database.
-- Changes to `MSThreatDB` do not mutate `OctoThreatDB`.
-- The one-time `_moobStackMigration.octoThreat106` marker is written.
-- Clean initialization without a legacy database creates a native MoobStack profile.
-- The minimal legacy bridge loads only `OctoThreatDB` and successfully supplies it to MS Threat.
-- `/msthreat status`, `/msthreat profile`, and the settings toggle execute through the new dispatcher.
+- Configuration-window construction.
+- Header and options initialization.
+- `GROUP EST` header display and color path.
+- Behavior-page group-estimation control.
+- Deep-copy migration from `OctoThreatDB`.
+- Migration of all saved character profiles.
+- Existing MS-prefixed value precedence.
+- Legacy database preservation.
+- Migration marker creation.
 
-## Provider regression checks
+## Archive validation
 
-The runtime test also verified that Auto mode retains the existing provider priority:
+The Clean, Update, and Source archives were checked for:
 
-1. Native absolute threat.
-2. Fresh server absolute threat.
-3. Local solo numeric estimate.
-4. Native percentage-only ordering.
+- ZIP integrity.
+- Correct top-level folders.
+- No double nesting.
+- No legacy bridge in the Clean archive.
+- Only migration files in the Update archive's `OctoThreat` folder.
+- Matching version and Interface metadata.
 
-No provider calculation or display behavior was redesigned during the rebrand.
+## Live-client status
 
-## Documentation checks
-
-- Confirmed the repository `README.md` places **Changelog** before **Documentation**.
-- Confirmed every new and legacy slash alias is documented.
-- Confirmed action, visibility, positioning, provider, recovery, profile, report, reset, and bootstrap commands are documented.
-- Confirmed installation and migration paths match the release archives.
-- Confirmed README, standalone changelog, release notes, TOC, core, and bootstrap all report version 1.0.7.
-- Confirmed the publisher disclaimer and World of Warcraft 1.12.1 / Interface 11200 wording are present.
-
-## Archive checks
-
-- Performed 168 static consistency and packaging assertions.
-- Verified clean, update, and source ZIP CRC integrity.
-- Verified the clean archive contains only the `MSThreat` top-level addon folder.
-- Verified the clean archive contains no legacy migration bridge.
-- Verified the update archive contains `MSThreat` plus the minimal `OctoThreat` migration bridge.
-- Verified the update bridge does not contain the former full core, local provider, or UI implementation.
-- Verified the source archive contains GitHub Markdown, release metadata, addon source, and migration-bridge source.
-- Verified there is no accidental double nesting.
-
-## Test scope
-
-Validation included static source review, Lua syntax compilation, mocked runtime initialization, UI construction, command dispatch, profile migration, profile switching, provider-selection regression checks, documentation consistency, and ZIP validation.
-
-The release was **not** executed inside a live World of Warcraft client in this environment.
+The repaired release has not yet been executed inside the live World of Warcraft client. The validation above consists of source parsing, static compatibility checks, archive inspection, and mocked runtime tests.

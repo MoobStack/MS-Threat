@@ -1,11 +1,11 @@
 -- MSThreat_Local.lua
--- Solo-only combat-log threat estimator for WoW 1.12.
+-- Local combat-log threat estimator for World of Warcraft 1.12.1.
 --
--- Exact native and server APIs remain preferred. This module is used only in Auto
--- mode, while solo, when no exact numeric provider is returning data. Values
--- are deliberately marked as estimated because Vanilla chat combat events do
--- not expose every spell's hidden flat threat, every talent modifier, or an
--- unambiguous GUID when several enemies share a name.
+-- Exact native and server APIs remain preferred. When those sources are not
+-- available, this module can estimate solo or grouped current-target threat from
+-- combat messages visible to this client. Values are deliberately marked as
+-- estimated because the 1.12.1 combat log does not expose every hidden flat
+-- threat value, talent modifier, threat reset, or unambiguous unit GUID.
 
 local OT = MSThreat
 OT.Local = OT.Local or {}
@@ -38,7 +38,12 @@ Local.unmatchedCount = 0
 Local.lastMessage = nil
 Local.selfDamageRules = {}
 Local.petDamageRules = {}
+Local.groupDamageRules = {}
 Local.healRules = {}
+Local.groupHealRules = {}
+Local.groupParseCount = 0
+Local.groupRejectedCount = 0
+Local.lastScope = "none"
 
 local PATTERN_MAGIC = {
     ["^"] = true, ["$"] = true, ["("] = true, [")"] = true,
@@ -292,11 +297,70 @@ local function ParseEnglishHeal(message)
     return nil
 end
 
-local function NamesEqual(a, b)
-    if not a or not b then
-        return false
+local function NormalizeName(name)
+    local normalized
+    local dashAt
+    if not name then
+        return nil
     end
-    return tostring(a) == tostring(b)
+    normalized = strlower(tostring(name))
+    normalized = gsub(normalized, "^%s+", "")
+    normalized = gsub(normalized, "%s+$", "")
+    dashAt = strfind(normalized, "-", 1, 1)
+    if dashAt and dashAt > 1 then
+        normalized = strsub(normalized, 1, dashAt - 1)
+    end
+    if normalized == "" then
+        return nil
+    end
+    return normalized
+end
+
+local function NamesEqual(a, b)
+    local first = NormalizeName(a)
+    local second = NormalizeName(b)
+    return first ~= nil and second ~= nil and first == second
+end
+
+local function ParseEnglishGroupDamage(message)
+    local s
+    local sourceName
+    local targetName
+    local amount
+
+    s, _, sourceName, targetName, amount = strfind(message, "^(.+) hits (.+) for ([%d,%.]+)")
+    if not s then
+        s, _, sourceName, targetName, amount = strfind(message, "^(.+) crits (.+) for ([%d,%.]+)")
+    end
+    if not s then
+        s, _, sourceName, targetName, amount = strfind(message, "^(.+)'s .+ hits (.+) for ([%d,%.]+)")
+    end
+    if not s then
+        s, _, sourceName, targetName, amount = strfind(message, "^(.+)'s .+ crits (.+) for ([%d,%.]+)")
+    end
+    if s then
+        return targetName, ParseNumber(amount), sourceName
+    end
+    return nil, nil, nil
+end
+
+local function ParseEnglishGroupHeal(message)
+    local s
+    local sourceName
+    local targetName
+    local amount
+
+    s, _, sourceName, targetName, amount = strfind(message, "^(.+)'s .+ heals (.+) for ([%d,%.]+)")
+    if not s then
+        s, _, sourceName, targetName, amount = strfind(message, "^(.+)'s .+ critically heals (.+) for ([%d,%.]+)")
+    end
+    if not s then
+        s, _, targetName, amount, sourceName = strfind(message, "^(.+) gains ([%d,%.]+) health from (.+)'s .+")
+    end
+    if s then
+        return targetName, ParseNumber(amount), sourceName
+    end
+    return nil, nil, nil
 end
 
 local function GetPlayerClass()
@@ -373,7 +437,9 @@ end
 function Local:BuildRules()
     self.selfDamageRules = {}
     self.petDamageRules = {}
+    self.groupDamageRules = {}
     self.healRules = {}
+    self.groupHealRules = {}
 
     AddRule(self.selfDamageRules, "COMBATHITSELFOTHER", 1, 2, nil, nil)
     AddRule(self.selfDamageRules, "COMBATHITSCHOOLSELFOTHER", 1, 2, nil, nil)
@@ -386,9 +452,20 @@ function Local:BuildRules()
     AddRule(self.selfDamageRules, "PERIODICAURADAMAGESELFOTHER", 1, 2, nil, 4)
     AddRule(self.selfDamageRules, "DAMAGESHIELDSELFOTHER", 3, 1, nil, nil)
 
-    -- Spell messages ("Pet's Bite hits ...") must be checked before the
-    -- generic melee format, whose first %s would otherwise greedily consume
-    -- "Pet's Bite" as though it were the source name.
+    -- Other-to-other formats carry both source and target. They are used for
+    -- the player's pet and for visible party/raid member combat messages.
+    AddRule(self.groupDamageRules, "SPELLLOGOTHEROTHER", 3, 4, 1, 2)
+    AddRule(self.groupDamageRules, "SPELLLOGSCHOOLOTHEROTHER", 3, 4, 1, 2)
+    AddRule(self.groupDamageRules, "SPELLLOGCRITOTHEROTHER", 3, 4, 1, 2)
+    AddRule(self.groupDamageRules, "SPELLLOGCRITSCHOOLOTHEROTHER", 3, 4, 1, 2)
+    AddRule(self.groupDamageRules, "COMBATHITOTHEROTHER", 2, 3, 1, nil)
+    AddRule(self.groupDamageRules, "COMBATHITSCHOOLOTHEROTHER", 2, 3, 1, nil)
+    AddRule(self.groupDamageRules, "COMBATHITCRITOTHEROTHER", 2, 3, 1, nil)
+    AddRule(self.groupDamageRules, "COMBATHITCRITSCHOOLOTHEROTHER", 2, 3, 1, nil)
+    AddRule(self.groupDamageRules, "PERIODICAURADAMAGEOTHEROTHER", 1, 2, 4, 5)
+
+    -- Keep a separate pet bucket for backwards-compatible diagnostics and for
+    -- clients that route pet messages through the same localized formats.
     AddRule(self.petDamageRules, "SPELLLOGOTHEROTHER", 3, 4, 1, 2)
     AddRule(self.petDamageRules, "SPELLLOGSCHOOLOTHEROTHER", 3, 4, 1, 2)
     AddRule(self.petDamageRules, "SPELLLOGCRITOTHEROTHER", 3, 4, 1, 2)
@@ -405,6 +482,13 @@ function Local:BuildRules()
     AddRule(self.healRules, "HEALEDCRITSELFOTHER", 2, 3, nil, 1)
     AddRule(self.healRules, "PERIODICAURAHEALSELFSELF", nil, 1, nil, 2)
     AddRule(self.healRules, "PERIODICAURAHEALSELFOTHER", 1, 2, nil, 3)
+
+    AddRule(self.groupHealRules, "HEALEDOTHERSELF", nil, 3, 1, 2)
+    AddRule(self.groupHealRules, "HEALEDCRITOTHERSELF", nil, 3, 1, 2)
+    AddRule(self.groupHealRules, "HEALEDOTHEROTHER", 3, 4, 1, 2)
+    AddRule(self.groupHealRules, "HEALEDCRITOTHEROTHER", 3, 4, 1, 2)
+    AddRule(self.groupHealRules, "PERIODICAURAHEALOTHERSELF", nil, 2, 3, 4)
+    AddRule(self.groupHealRules, "PERIODICAURAHEALOTHEROTHER", 1, 2, 3, 4)
 end
 
 function Local:Initialize()
@@ -426,6 +510,9 @@ function Local:ResetSession()
     self.eventCount = 0
     self.parseCount = 0
     self.unmatchedCount = 0
+    self.groupParseCount = 0
+    self.groupRejectedCount = 0
+    self.lastScope = "none"
     self.lastMessage = nil
 end
 
@@ -457,32 +544,37 @@ function Local:EndCombat()
     self.eventCount = 0
 end
 
-function Local:CanActivate()
-    if not OT.db or not OT.db.soloFallback then
+function Local:IsScopeEnabled()
+    if not OT.db then
         return false
     end
-    if OT:GetGroupSize() > 0 or not OT.inCombat then
+    if OT:GetGroupSize() > 0 then
+        return OT.db.groupFallback and true or false
+    end
+    return OT.db.soloFallback and true or false
+end
+
+function Local:CanActivate()
+    if not self:IsScopeEnabled() or not OT.inCombat then
         return false
     end
 
-    -- Keep the stored fight target usable through the killing blow. A 1.12
-    -- client can mark the selected unit dead before the final combat message is
-    -- dispatched, even though currentTargetKey/currentTargetName still belong
-    -- to the fight that is about to be finalized.
+    -- Keep the stored fight target usable through the killing blow. A 1.12.1
+    -- client can mark the selected unit dead before the final combat message.
     return OT.currentTargetKey ~= nil and OT.currentTargetName ~= nil
 end
 
 function Local:EnsureCombatTracking(fromCombatEvent)
-    if not OT.db or not OT.db.soloFallback or OT:GetGroupSize() > 0 then
+    if not self:IsScopeEnabled() then
         return false
     end
 
-    -- A combat-log message is itself authoritative evidence that a fight has
-    -- begun. This matters for fast melee openers and stealth transitions where
-    -- UnitAffectingCombat can lag behind the first rogue attack on old clients.
+    -- A current-target combat message is authoritative evidence that the fight
+    -- has begun. This covers fast rogue openers and group attacks that arrive
+    -- before UnitAffectingCombat settles on an old client.
     if fromCombatEvent and not OT.inCombat and OT.currentTargetKey and OT.currentTargetName then
         if OT.NoteCombatEvidence then
-            OT:NoteCombatEvidence("local combat message")
+            OT:NoteCombatEvidence("current-target combat message")
         end
         if OT.BeginCombatTracking then
             OT:BeginCombatTracking()
@@ -511,7 +603,7 @@ function Local:IsUsable()
     return self.targetKey == OT.currentTargetKey and self.targetName == OT.currentTargetName
 end
 
-function Local:EnsureEntry(name, classToken, isPet, owner)
+function Local:EnsureEntry(name, classToken, isPet, owner, unitToken)
     local entry
     if not name or name == "" then
         return nil
@@ -520,6 +612,7 @@ function Local:EnsureEntry(name, classToken, isPet, owner)
     if not entry then
         entry = {
             name = name,
+            unit = unitToken,
             class = classToken or "UNKNOWN",
             isPet = isPet and true or false,
             owner = owner,
@@ -527,36 +620,90 @@ function Local:EnsureEntry(name, classToken, isPet, owner)
             events = 0,
         }
         self.entries[name] = entry
+    else
+        if unitToken then
+            entry.unit = unitToken
+        end
+        if classToken and classToken ~= "UNKNOWN" then
+            entry.class = classToken
+        end
+        if owner then
+            entry.owner = owner
+        end
+        if isPet then
+            entry.isPet = true
+        end
     end
     return entry
 end
 
 function Local:EnsureEntries()
+    local i
+    local rosterEntry
     local playerName = UnitName("player")
-    local petName
-    self:EnsureEntry(playerName, GetPlayerClass(), false, nil)
-    if OT.db and OT.db.showPets and UnitExists("pet") then
-        petName = UnitName("pet")
-        self:EnsureEntry(petName, "PET", true, playerName)
+
+    if OT.GetGroupSize and OT:GetGroupSize() > 0 and OT.rosterUnits then
+        for i = 1, table.getn(OT.rosterUnits) do
+            rosterEntry = OT.rosterUnits[i]
+            if rosterEntry and (not rosterEntry.isPet or (OT.db and OT.db.showPets)) then
+                self:EnsureEntry(rosterEntry.name, rosterEntry.class, rosterEntry.isPet,
+                    rosterEntry.owner, rosterEntry.unit)
+            end
+        end
+    else
+        self:EnsureEntry(playerName, GetPlayerClass(), false, nil, "player")
+        if OT.db and OT.db.showPets and UnitExists("pet") then
+            self:EnsureEntry(UnitName("pet"), "PET", true, playerName, "pet")
+        end
     end
 end
 
-function Local:AddPlayerDamage(amount)
-    local playerName
+function Local:ResolveRosterSource(sourceName)
+    local rosterEntry
+    if not sourceName then
+        return nil
+    end
+    if OT.ResolveRosterEntry then
+        rosterEntry = OT:ResolveRosterEntry(sourceName)
+    end
+    if not rosterEntry then
+        return nil
+    end
+    if rosterEntry.isPet and OT.db and not OT.db.showPets then
+        return nil
+    end
+    return rosterEntry
+end
+
+function Local:GetEntryThreatModifier(entry)
+    if entry and entry.unit == "player" then
+        return self:GetPlayerThreatModifier()
+    end
+    -- Other players' stance, talents, buffs, and hidden spell threat are not
+    -- fully visible. Keep their baseline at 1.0 and mark the provider estimated.
+    return 1.00
+end
+
+function Local:AddSourceDamage(sourceName, amount, sourceEntry)
+    local rosterEntry = sourceEntry or self:ResolveRosterSource(sourceName)
     local entry
     local modifier
 
     if not self:IsUsable() or not amount or amount <= 0 then
         return false
     end
+    if not rosterEntry then
+        self.groupRejectedCount = (self.groupRejectedCount or 0) + 1
+        return false
+    end
 
-    playerName = UnitName("player")
-    entry = self:EnsureEntry(playerName, GetPlayerClass(), false, nil)
+    entry = self:EnsureEntry(rosterEntry.name, rosterEntry.class, rosterEntry.isPet,
+        rosterEntry.owner, rosterEntry.unit)
     if not entry then
         return false
     end
 
-    modifier = self:GetPlayerThreatModifier()
+    modifier = self:GetEntryThreatModifier(entry)
     entry.threat = (entry.threat or 0) + amount * modifier
     entry.events = (entry.events or 0) + 1
     self.lastData = GetTime()
@@ -564,22 +711,26 @@ function Local:AddPlayerDamage(amount)
     return true
 end
 
-function Local:AddPlayerHealing(amount)
-    local playerName
+function Local:AddSourceHealing(sourceName, amount, sourceEntry)
+    local rosterEntry = sourceEntry or self:ResolveRosterSource(sourceName)
     local entry
     local modifier
 
     if not self:IsUsable() or not amount or amount <= 0 then
         return false
     end
+    if not rosterEntry then
+        self.groupRejectedCount = (self.groupRejectedCount or 0) + 1
+        return false
+    end
 
-    playerName = UnitName("player")
-    entry = self:EnsureEntry(playerName, GetPlayerClass(), false, nil)
+    entry = self:EnsureEntry(rosterEntry.name, rosterEntry.class, rosterEntry.isPet,
+        rosterEntry.owner, rosterEntry.unit)
     if not entry then
         return false
     end
 
-    modifier = self:GetPlayerThreatModifier()
+    modifier = self:GetEntryThreatModifier(entry)
     entry.threat = (entry.threat or 0) + amount * 0.50 * modifier
     entry.events = (entry.events or 0) + 1
     self.lastData = GetTime()
@@ -587,30 +738,39 @@ function Local:AddPlayerHealing(amount)
     return true
 end
 
+function Local:AddPlayerDamage(amount)
+    local playerName = UnitName("player")
+    local rosterEntry = OT.ResolveRosterEntry and OT:ResolveRosterEntry(playerName) or nil
+    if not rosterEntry then
+        rosterEntry = { name = playerName, unit = "player", class = GetPlayerClass(), isPet = false }
+    end
+    return self:AddSourceDamage(playerName, amount, rosterEntry)
+end
+
+function Local:AddPlayerHealing(amount)
+    local playerName = UnitName("player")
+    local rosterEntry = OT.ResolveRosterEntry and OT:ResolveRosterEntry(playerName) or nil
+    if not rosterEntry then
+        rosterEntry = { name = playerName, unit = "player", class = GetPlayerClass(), isPet = false }
+    end
+    return self:AddSourceHealing(playerName, amount, rosterEntry)
+end
+
 function Local:AddPetDamage(amount)
     local playerName
     local petName
-    local entry
+    local rosterEntry
 
-    if not self:IsUsable() or not OT.db.showPets or not amount or amount <= 0 then
+    if not OT.db or not OT.db.showPets or not UnitExists("pet") then
         return false
     end
-    if not UnitExists("pet") then
-        return false
-    end
-
     playerName = UnitName("player")
     petName = UnitName("pet")
-    entry = self:EnsureEntry(petName, "PET", true, playerName)
-    if not entry then
-        return false
+    rosterEntry = OT.ResolveRosterEntry and OT:ResolveRosterEntry(petName) or nil
+    if not rosterEntry then
+        rosterEntry = { name = petName, unit = "pet", class = "PET", isPet = true, owner = playerName }
     end
-
-    entry.threat = (entry.threat or 0) + amount
-    entry.events = (entry.events or 0) + 1
-    self.lastData = GetTime()
-    self.eventCount = self.eventCount + 1
-    return true
+    return self:AddSourceDamage(petName, amount, rosterEntry)
 end
 
 function Local:HandleEvent(eventName, message, combatEvidence)
@@ -619,11 +779,48 @@ function Local:HandleEvent(eventName, message, combatEvidence)
     local sourceName
     local spellName
     local petName
+    local rosterEntry
+    local playerName
+    local isGroupDamage
+    local isGroupHeal
+    local preParsedGroupDamage = false
 
     if type(message) ~= "string" or message == "" then
         return false
     end
-    if not self:EnsureCombatTracking(combatEvidence and true or false) or not self:IsUsable() then
+    playerName = UnitName("player")
+    isGroupDamage = eventName == "CHAT_MSG_COMBAT_PARTY_HITS"
+        or eventName == "CHAT_MSG_COMBAT_FRIENDLYPLAYER_HITS"
+        or eventName == "CHAT_MSG_SPELL_PARTY_DAMAGE"
+        or eventName == "CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE"
+        or eventName == "CHAT_MSG_SPELL_PERIODIC_PARTY_DAMAGE"
+        or eventName == "CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_DAMAGE"
+
+    -- Group combat events can arrive before the local player or target combat
+    -- flags settle. Parse the source and target first, and only latch combat when
+    -- the message actually belongs to the selected target.
+    if isGroupDamage and not OT.inCombat and OT:GetGroupSize() > 0
+        and OT.db and OT.db.groupFallback then
+        targetName, amount, sourceName, spellName = ParseRules(self.groupDamageRules, message)
+        if not amount then
+            targetName, amount, sourceName = ParseEnglishGroupDamage(message)
+        end
+        rosterEntry = self:ResolveRosterSource(sourceName)
+        if amount and rosterEntry and rosterEntry.unit ~= "player"
+            and NamesEqual(targetName, OT.currentTargetName) then
+            preParsedGroupDamage = true
+            if OT.NoteCombatEvidence then
+                OT:NoteCombatEvidence("current-target group combat message")
+            end
+            if OT.BeginCombatTracking then
+                OT:BeginCombatTracking()
+            else
+                OT.inCombat = true
+            end
+        end
+    end
+
+    if not self:EnsureCombatTracking(combatEvidence and true or preParsedGroupDamage) or not self:IsUsable() then
         return false
     end
 
@@ -640,6 +837,7 @@ function Local:HandleEvent(eventName, message, combatEvidence)
         end
         if amount and NamesEqual(targetName, self.targetName) then
             self.parseCount = self.parseCount + 1
+            self.lastScope = "self damage"
             return self:AddPlayerDamage(amount)
         end
     end
@@ -656,21 +854,59 @@ function Local:HandleEvent(eventName, message, combatEvidence)
         if amount and NamesEqual(targetName, self.targetName)
             and (not sourceName or NamesEqual(sourceName, petName)) then
             self.parseCount = self.parseCount + 1
+            self.lastScope = "pet damage"
             return self:AddPetDamage(amount)
         end
     end
 
+    if isGroupDamage and OT:GetGroupSize() > 0 and OT.db and OT.db.groupFallback then
+        if not preParsedGroupDamage then
+            targetName, amount, sourceName, spellName = ParseRules(self.groupDamageRules, message)
+            if not amount then
+                targetName, amount, sourceName = ParseEnglishGroupDamage(message)
+            end
+            rosterEntry = self:ResolveRosterSource(sourceName)
+        end
+        -- Own damage is handled by SELF events; do not count a duplicated OTHER
+        -- representation if a modified client emits both channels.
+        if amount and rosterEntry and rosterEntry.unit ~= "player"
+            and NamesEqual(targetName, self.targetName) then
+            self.parseCount = self.parseCount + 1
+            self.groupParseCount = self.groupParseCount + 1
+            self.lastScope = "group damage"
+            return self:AddSourceDamage(sourceName, amount, rosterEntry)
+        end
+    end
+
     if eventName == "CHAT_MSG_SPELL_SELF_BUFF"
-        or eventName == "CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS"
-        or eventName == "CHAT_MSG_SPELL_FRIENDLYPLAYER_BUFF"
-        or eventName == "CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_BUFFS" then
+        or eventName == "CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS" then
         targetName, amount, sourceName, spellName = ParseRules(self.healRules, message)
         if not amount then
             amount = ParseEnglishHeal(message)
         end
         if amount then
             self.parseCount = self.parseCount + 1
+            self.lastScope = "self healing"
             return self:AddPlayerHealing(amount)
+        end
+    end
+
+    isGroupHeal = eventName == "CHAT_MSG_SPELL_PARTY_BUFF"
+        or eventName == "CHAT_MSG_SPELL_FRIENDLYPLAYER_BUFF"
+        or eventName == "CHAT_MSG_SPELL_PERIODIC_PARTY_BUFFS"
+        or eventName == "CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_BUFFS"
+
+    if isGroupHeal and OT:GetGroupSize() > 0 and OT.db and OT.db.groupFallback then
+        targetName, amount, sourceName, spellName = ParseRules(self.groupHealRules, message)
+        if not amount then
+            targetName, amount, sourceName = ParseEnglishGroupHeal(message)
+        end
+        rosterEntry = self:ResolveRosterSource(sourceName)
+        if amount and rosterEntry and not NamesEqual(rosterEntry.name, playerName) then
+            self.parseCount = self.parseCount + 1
+            self.groupParseCount = self.groupParseCount + 1
+            self.lastScope = "group healing"
+            return self:AddSourceHealing(sourceName, amount, rosterEntry)
         end
     end
 
@@ -734,7 +970,7 @@ function Local:GetRows()
 
             row = {
                 name = name,
-                unit = entry.isPet and "pet" or "player",
+                unit = entry.unit,
                 class = entry.class,
                 isPet = entry.isPet,
                 owner = entry.owner,
@@ -760,18 +996,29 @@ end
 
 function Local:GetDiagnostics()
     local age
+    local grouped = OT.GetGroupSize and OT:GetGroupSize() > 0
+    local enabled
     if self.lastData and self.lastData > 0 then
         age = string.format("%.1fs", GetTime() - self.lastData)
     else
         age = "none"
     end
-    return "fallback " .. ((OT.db and OT.db.soloFallback) and "on" or "off")
+    if grouped then
+        enabled = OT.db and OT.db.groupFallback
+    else
+        enabled = OT.db and OT.db.soloFallback
+    end
+    return "scope " .. (grouped and "group" or "solo")
+        .. ", fallback " .. (enabled and "on" or "off")
         .. ", patterns " .. tostring(table.getn(self.selfDamageRules)
-            + table.getn(self.petDamageRules) + table.getn(self.healRules))
+            + table.getn(self.petDamageRules) + table.getn(self.groupDamageRules)
+            + table.getn(self.healRules) + table.getn(self.groupHealRules))
         .. ", fight events " .. tostring(self.eventCount or 0)
+        .. ", group matched " .. tostring(self.groupParseCount or 0)
+        .. ", rejected sources " .. tostring(self.groupRejectedCount or 0)
         .. ", matched " .. tostring(self.parseCount or 0)
         .. ", unmatched " .. tostring(self.unmatchedCount or 0)
-        .. ", last " .. age
+        .. ", last " .. age .. " (" .. tostring(self.lastScope or "none") .. ")"
 end
 
 if MSThreat then

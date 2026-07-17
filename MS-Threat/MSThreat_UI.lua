@@ -89,7 +89,7 @@ end
 local function ProviderColor(badge)
     if badge == "NATIVE" or badge == "SERVER" or badge == "NATIVE %" then
         return 0.35, 1.0, 0.45
-    elseif badge == "LOCAL EST" then
+    elseif badge == "LOCAL EST" or badge == "GROUP EST" then
         return 1.0, 0.72, 0.25
     elseif badge == "PREVIEW" then
         return 0.40, 0.80, 1.0
@@ -653,7 +653,7 @@ local function CreateCheckbox(parent, name, labelText, x, y, key)
     button:SetScript("OnClick", function()
         OT.db[this.key] = not OT.db[this.key]
         this:Refresh()
-        if this.key == "showPets" or this.key == "soloFallback" then
+        if this.key == "showPets" or this.key == "soloFallback" or this.key == "groupFallback" then
             OT:RefreshThreatData("data option changed", false, false, false)
         else
             OT:RebuildRoster()
@@ -890,15 +890,16 @@ function UI:CreateOptions()
     CreateCheckbox(behaviorPage, "MSThreatLocked", "Lock meter position", 0, -102, "locked")
     CreateCheckbox(behaviorPage, "MSThreatAlwaysPlayer", "Keep your row visible", 225, -102, "alwaysShowPlayer")
     CreateCheckbox(behaviorPage, "MSThreatSoloFallback", "Estimate my threat while solo", 0, -136, "soloFallback")
+    CreateCheckbox(behaviorPage, "MSThreatGroupFallback", "Estimate group threat locally", 0, -176, "groupFallback")
 
     CreateCycle(behaviorPage, "MSThreatProviderMode", "Threat provider", 225, -126, 200, "providerMode", {
-        { "AUTO", "Auto: exact, then solo estimate" },
+        { "AUTO", "Auto: exact, then local estimate" },
         { "NATIVE", "Native API only" },
         { "SERVER", "Server protocol only" },
-        { "LOCAL", "Local solo estimate only" },
+        { "LOCAL", "Local estimate only" },
     })
 
-    CreateCheckbox(behaviorPage, "MSThreatAutoRecover", "Auto-recover stale threat data", 0, -176, "autoRecover")
+    CreateCheckbox(behaviorPage, "MSThreatAutoRecover", "Auto-recover stale threat data", 225, -176, "autoRecover")
 
     CreateSectionTitle(behaviorPage, "Aggro warning", 0, -216)
     CreateCheckbox(behaviorPage, "MSThreatWarningEnabled", "Warn near the pull threshold", 0, -246, "warningEnabled")
@@ -910,7 +911,7 @@ function UI:CreateOptions()
     behaviorPage.providerNote = NewFontString(behaviorPage, "OVERLAY", 10, "", "LEFT")
     behaviorPage.providerNote:SetPoint("TOPLEFT", behaviorPage, "TOPLEFT", 225, -342)
     behaviorPage.providerNote:SetWidth(205)
-    behaviorPage.providerNote:SetText("Hide out of combat is the master visibility switch. Auto recovery performs one soft provider restart; use the R header button or Refresh to do the same manually.")
+    behaviorPage.providerNote:SetText("Local group estimates use combat messages visible to this client when exact data is unavailable. Auto recovery performs one soft provider restart; use R or Refresh for the same action.")
     behaviorPage.providerNote:SetTextColor(0.62, 0.68, 0.73)
 
     frame.diagnostics = NewFontString(frame, "OVERLAY", 10, "", "LEFT")

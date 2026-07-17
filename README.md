@@ -1,8 +1,8 @@
 # MS Threat
 
-**MS Threat** is a lightweight, standalone current-target threat meter published by **MoobStack**. It sorts available party, raid, player, and optional pet threat data into one compact header with dynamically inserted rows, while keeping separate settings and fight history for every character.
+**MS Threat** is a lightweight, standalone current-target threat meter published by **MoobStack**. It sorts available party, raid, player, and optional pet threat data into one compact header with dynamically inserted rows, while keeping separate settings and fight history for every realm-and-character profile.
 
-- **Version:** 1.0.7
+- **Version:** 1.0.8
 - **Publisher:** MoobStack
 - **Internal addon name:** `MSThreat`
 - **Client:** World of Warcraft 1.12.1
@@ -15,17 +15,29 @@
 
 ## Changelog
 
+### 1.0.8
+
+- Fixed a cross-character and grouped-combat failure that could leave the meter permanently showing `WAIT` after changing characters.
+- Added a per-profile **group local-estimation fallback** for ordinary grouped targets when exact native or compatible server data is unavailable.
+- Added the `GROUP EST` provider badge and clearly marked estimated group rows.
+- Added `/msthreat groupest on|off` and `/msthreat soloest on|off` commands.
+- Added a Behavior-page option named **Estimate group threat locally**.
+- Changed combat-state detection to use the local player and selected target rather than any group member fighting elsewhere.
+- Added automatic expiry of a stale combat latch when an old client misses or delays the expected combat-end event.
+- Restricted exact server queries to combat involving the selected target, preventing unrelated group activity from keeping the provider in `WAIT`.
+- Added local parsing for visible party and raid damage and healing messages against the current target.
+- Kept native absolute threat, compatible server threat, and native percentage tables ahead of local estimates in Auto mode.
+- Re-baselined roster, native, server, local-estimator, TPS, warning, and recovery state when the active character profile changes.
+- Updated `/msthreat status` with combat-scope and separate solo/group fallback diagnostics.
+- Preserved existing profiles, positions, appearance settings, provider choices, fight reports, primary commands, and legacy command aliases.
+- Updated GitHub documentation, release notes, upgrade instructions, and validation materials for version 1.0.8.
+
 ### 1.0.7
 
 - Rebranded **OctoThreat** as **MS Threat** under the MoobStack publisher.
-- Renamed the addon folder, TOC, source files, addon table, frames, UI branding, diagnostics, documentation, and primary saved-variable table to MS-prefixed names.
-- Added `/msthreat`, `/mst`, and `/msthreatmeter` as the primary command aliases.
-- Retained `/othreat` and `/octothreat` as legacy aliases for existing macros and user habits.
-- Added migration from `OctoThreatDB` to `MSThreatDB` without deleting or modifying the legacy saved data.
-- Added a temporary `OctoThreat` migration bridge for settings-preserving update installations.
-- Preserved every existing realm-and-character profile, including meter position, appearance, provider mode, visibility options, warning settings, recovery settings, and last-fight history.
-- Updated compatibility and documentation language to target the World of Warcraft 1.12.1 client and Interface 11200 without tying the addon to one community server project.
-- Preserved the early command bootstrap, provider recovery, native and server threat paths, local solo estimator, compact row UI, and per-character profile behavior from version 1.0.6.
+- Added migration from `OctoThreatDB` to `MSThreatDB` without deleting legacy data.
+- Added primary `/msthreat`, `/mst`, and `/msthreatmeter` aliases while retaining `/othreat` and `/octothreat`.
+- Preserved separate realm-and-character profiles and the existing native, server, percentage, and solo-local providers.
 
 ### Legacy history
 
@@ -37,85 +49,114 @@ Versions **1.0.0 through 1.0.6** were published under the **OctoThreat** name.
 
 ### Overview
 
-MS Threat displays the threat table for the currently selected hostile NPC. It is intentionally minimal: the meter draws one header bar and only the active threat rows beneath it, without an enclosing background panel.
+MS Threat displays threat for the currently selected hostile NPC. The meter intentionally draws only one header bar and the active participant rows beneath it; there is no enclosing window background.
 
-Rows are sorted from highest to lowest current threat. Depending on the active provider, each row can show:
+Rows are sorted from highest to lowest threat. Depending on the active provider, each row can show:
 
-- True threat rank.
+- Threat rank.
 - Player or pet name.
 - Current tank marker.
 - Percentage of the threat leader.
 - Percentage toward the aggro-pull threshold.
 - Absolute threat, when available.
-- Rolling threat per second, when absolute threat is available.
-- An estimated marker when using local solo calculations.
+- Rolling threat per second, when absolute values are available.
+- An estimate marker when values are reconstructed from local combat messages.
 
-The local player receives a gold row marker. The detected tank receives a red marker and `[T]` indicator. The optional **Keep your row visible** setting keeps the local player on-screen when their true rank falls below the configured row limit.
+The local player receives a gold row marker. A detected tank receives a red marker and `[T]` indicator. **Keep your row visible** can retain the local player on-screen while preserving the player's real rank.
 
-MS Threat does **not** require pfUI, another threat addon, or other group members to install the same addon.
+MS Threat does not require pfUI, another threat addon, or other group members to install MS Threat.
 
-### Main features
+### Features
 
-- Compact single-header threat meter with dynamic rows.
-- Descending threat sorting for the current hostile NPC target.
+- Compact single-header current-target threat meter.
+- Descending player and optional pet sorting.
 - Exact native threat support when exposed by the client.
-- Compatible server-protocol support for eligible group encounters.
-- Clearly marked local solo estimates when exact numeric data is unavailable.
-- Optional player and pet tracking during solo combat.
+- Compatible exact server-protocol support for eligible grouped encounters.
+- Native percentage-only ordering when absolute values are unavailable.
+- Clearly marked solo and group local estimates when no exact table is available.
+- Separate realm-and-character profiles.
+- Automatic profile activation and transient-provider reset after changing characters.
+- Player, party, raid, and optional pet rows in the local-estimation fallback.
+- Damage and healing-message attribution for visible group members.
 - Absolute threat, percentage, and rolling TPS columns.
 - Class-colored, threat-gradient, or neutral row styles.
 - Configurable width, row height, row count, scale, and opacity.
-- Hide while out of combat and hide without a hostile target options.
+- Hide-while-out-of-combat and hide-without-target controls.
 - Aggro-threshold header flash and optional warning sound.
-- Automatic stale-data recovery after group, target, and provider transitions.
-- Header **R** button and settings **Refresh** button for settings-safe recovery.
-- Per-character profiles stored by realm and character name.
-- Last-fight peak threat and maximum TPS report.
-- Preview mode for positioning and appearance configuration.
-- Early slash-command bootstrap with load diagnostics.
-- Settings-preserving migration from OctoThreat 1.0.6.
+- Automatic stale-data recovery.
+- Header **R** refresh button and settings **Refresh** button.
+- Per-character last-fight peak-threat and TPS reports.
+- Early slash-command bootstrap and load diagnostics.
+- Settings-preserving migration from OctoThreat.
 
 ---
 
-## Threat providers and independence
+### Threat providers
 
-MS Threat does not exchange calculated threat with other players' addon installations. In **Auto** mode, it selects the best locally available provider.
+MS Threat never requires calculated threat to be exchanged between players' addon installations. Auto mode chooses the best source visible to the local client.
 
-| Provider | Data | Typical use |
+| Provider | Meaning | Typical use |
 |---|---|---|
-| `NATIVE` | Exact absolute threat, tank state, and pull percentage from client-exposed threat APIs | Preferred whenever available |
-| `SERVER` | Exact group threat returned through the compatible TWT v4 server protocol | Eligible grouped elite and boss encounters |
-| `LOCAL EST` | Estimated solo threat calculated from this client's combat messages | Ordinary solo combat when exact numeric data is unavailable |
-| `NATIVE %` | Precise percentage ordering without absolute threat values | Clients exposing percentages but not absolute values |
+| `NATIVE` | Exact absolute threat from client-exposed threat APIs | Preferred whenever available |
+| `SERVER` | Exact grouped threat returned through the compatible TWT v4 server protocol | Eligible grouped elite and boss encounters |
+| `NATIVE %` | Precise ordering and percentages without absolute threat or TPS | When the client exposes percentages only |
+| `GROUP EST` | Estimated group threat reconstructed from combat messages visible to this client | Ordinary grouped targets without exact data |
+| `LOCAL EST` | Estimated player and optional pet threat reconstructed locally | Ordinary solo combat without exact data |
 
-### Auto provider priority
+#### Auto-mode priority
 
-The practical priority is:
+Auto mode uses the following practical order:
 
 1. Native absolute threat.
-2. Fresh exact server threat.
-3. Local solo estimate when solo fallback is enabled.
-4. Native percentage-only ordering when no absolute numeric table is available.
+2. Fresh exact compatible-server threat.
+3. Native percentage data during grouped combat.
+4. Group or solo local estimate, depending on the current group state.
+5. Native percentage data during solo combat when no numeric local table is available.
 
-MS Threat never labels local combat-log calculations as exact. Estimated values use the `LOCAL EST` badge and a `~` prefix.
+Local estimates never replace a fresh exact table and are never labeled exact.
 
-### Compatible server protocol
+#### Exact server-provider limits
 
-The server path sends the established `TWT_UDTSv4` query and reads `TWTv4=` responses. Availability is controlled by the client and server environment. It is normally restricted to party or raid combat against elite creatures or world bosses.
+The compatible server path is normally available only when all of the following are true:
 
-This is a server query, not peer-addon synchronization. Other players do not need MS Threat installed.
+- The player is in a party or raid.
+- A hostile elite creature or world boss is selected.
+- The local player or selected target is in the current fight.
+- The connected environment supports the compatible threat protocol.
 
-### Solo local estimator
+Server mode is intentionally strict. **Auto** is recommended because it can fall back to native percentage or local estimation where an exact server table is unavailable.
 
-When solo and exact numeric data is unavailable, MS Threat can estimate threat from locally visible combat messages. It tracks supported player damage, reflected damage, effective healing, visible form modifiers, and optional pet damage against the selected target.
+#### Local group estimation
 
-The estimator cannot reconstruct every hidden threat rule. It is useful for solo questing, relative TPS review, and fight history, but it is deliberately marked as estimated.
+Version 1.0.8 adds local group estimation for ordinary grouped fights. It creates rows for the visible roster and attributes supported party or raid damage and healing messages to the corresponding participant when they apply to the selected target.
+
+Group-estimated values are marked with `GROUP EST` and a `~` prefix. They are useful for maintaining a populated, sorted meter without requiring another player's addon, but they remain estimates because the original 1.12.1 combat log does not expose every hidden threat component.
 
 ---
 
-## Installation
+### Combat and character-switch recovery
 
-### Clean installation
+Threat tracking is scoped to the **local player and selected target**. A different party member fighting somewhere else no longer keeps the current-target meter in combat or leaves it stuck in `WAIT`.
+
+When the active character changes, MS Threat:
+
+- Activates the correct realm-and-character profile.
+- Clears previous native and server rows.
+- Clears prior server-query target state.
+- Clears local-estimator entries.
+- Clears TPS samples and warning state.
+- Rebuilds the current roster.
+- Redetects available providers.
+- Restores the new character's position and settings.
+- Begins a fresh tracking segment only when the new character or selected target is actually in combat.
+
+A short combat latch covers old-client event ordering, but the latch now expires automatically when live player and target combat evidence disappears.
+
+---
+
+### Installation
+
+#### Clean installation
 
 1. Completely exit World of Warcraft.
 2. Extract the `MSThreat` folder into:
@@ -131,100 +172,86 @@ The estimator cannot reconstruct every hidden threat rule. It is useful for solo
    ```
 
 4. Enable **MS Threat** on the character-selection AddOns screen.
-5. Log in and verify the installation:
+5. Log in and verify:
 
    ```text
    /msthreat status
    ```
 
-Avoid a double-nested folder:
+Avoid a double-nested installation:
 
 ```text
 Incorrect:
 World of Warcraft\Interface\AddOns\MSThreat\MSThreat\MSThreat.toc
 ```
 
-The configuration window and preview meter open automatically only for a newly created character profile.
+The configuration window and preview open automatically only for a newly created character profile.
 
----
+#### Updating from MS Threat 1.0.7
 
-## Updating from OctoThreat 1.0.6
+1. Completely exit World of Warcraft.
+2. Replace the existing folder:
 
-Use the settings-preserving migration update. It contains two sibling addon folders:
+   ```text
+   World of Warcraft\Interface\AddOns\MSThreat
+   ```
+
+3. Install the version 1.0.8 `MSThreat` folder.
+4. Do not delete `WTF` saved-variable files.
+5. Log in and enter:
+
+   ```text
+   /msthreat status
+   ```
+
+Existing profiles receive the new `groupFallback` setting automatically. It defaults to enabled without replacing any other profile setting.
+
+#### Updating directly from OctoThreat
+
+Use the settings-preserving Update archive. It contains two sibling folders:
 
 ```text
 World of Warcraft\Interface\AddOns\MSThreat\
 World of Warcraft\Interface\AddOns\OctoThreat\
 ```
 
-The temporary `OctoThreat` folder is a saved-variable bridge. It loads `OctoThreatDB` before MS Threat starts, but it does not execute the former threat-meter implementation.
-
-### Migration steps
+The temporary `OctoThreat` folder is a saved-variable bridge only. It loads `OctoThreatDB` before MS Threat starts and does not run the former threat-meter implementation.
 
 1. Completely exit World of Warcraft.
-2. Delete or move the existing full `OctoThreat` addon-code folder. This does not delete saved variables under `WTF`.
-3. Extract the migration update directly into:
-
-   ```text
-   World of Warcraft\Interface\AddOns\
-   ```
-
-4. Confirm both files exist:
-
-   ```text
-   World of Warcraft\Interface\AddOns\MSThreat\MSThreat.toc
-   World of Warcraft\Interface\AddOns\OctoThreat\OctoThreat.toc
-   ```
-
-5. Enable both AddOns-screen entries:
-
-   ```text
-   MS Threat
-   MS Threat Legacy Migration
-   ```
-
-6. Log into a character that previously used OctoThreat.
-7. Enter:
+2. Delete or move the old full `OctoThreat` code folder. Saved data under `WTF` is unaffected.
+3. Extract the Update archive into `Interface\AddOns`.
+4. Enable **MS Threat** and **MS Threat Legacy Migration**.
+5. Log into the affected characters.
+6. Verify migration:
 
    ```text
    /msthreat status
+   /msthreat profiles
    ```
 
-8. Confirm the saved-data line reports one of the following:
+7. Log out normally so `MSThreatDB` is written.
+8. After migration remains correct on a later login, disable or remove the temporary `OctoThreat` bridge.
 
-   ```text
-   legacy OctoThreatDB imported this session
-   legacy migration complete
-   ```
-
-9. Log out normally or exit the client so `MSThreatDB` is written.
-10. Verify the settings on the other characters whose profiles were stored in the former database.
-
-OctoThreat 1.0.6 already stores all realm-and-character profiles in one account-wide table, so the complete profile container is copied during migration. The original `OctoThreatDB` is not erased or modified.
-
-After migration has been verified, the temporary bridge may be disabled or deleted:
+The legacy table is copied as follows:
 
 ```text
-World of Warcraft\Interface\AddOns\OctoThreat
+OctoThreatDB
+    → MSThreatDB
 ```
 
-After making a backup, the old saved-variable file may also be removed manually:
-
-```text
-WTF\Account\<Account>\SavedVariables\OctoThreat.lua
-```
+Legacy data is not erased.
 
 ---
 
-## Basic use
+### Basic use
 
-Open or close settings:
+Open settings:
 
 ```text
 /msthreat
 ```
 
-Unlock the meter for movement:
+Unlock and move the meter:
 
 ```text
 /msthreat unlock
@@ -236,7 +263,7 @@ Drag the header with the left mouse button, then lock it:
 /msthreat lock
 ```
 
-Right-click the header to open settings. Click the small **R** button at the right edge of the header to restart transient roster and provider data without changing saved settings.
+Right-click the header to open settings. Click the small **R** button to restart transient threat data without changing the active character profile.
 
 Show demonstration rows:
 
@@ -244,7 +271,7 @@ Show demonstration rows:
 /msthreat test
 ```
 
-Print current provider and recovery diagnostics:
+Print detailed diagnostics:
 
 ```text
 /msthreat status
@@ -252,60 +279,52 @@ Print current provider and recovery diagnostics:
 
 ---
 
-## User interface
+### User interface
 
-### Meter header
-
-The header displays:
-
-- Addon name and current target.
-- Active provider badge.
-- A compact **R** refresh button.
-
-Header interactions:
+#### Header interactions
 
 | Interaction | Action |
 |---|---|
 | Left-drag while unlocked | Move the meter |
 | Right-click | Open settings |
-| Click `R` | Restart transient roster/provider data without changing settings |
+| Click `R` | Restart roster and provider data without changing settings |
 
-### Display settings
+#### Display settings
 
 - Meter width: `180–520` pixels.
 - Row height: `14–30` pixels.
-- Maximum rows: `3–40`.
+- Maximum visible rows: `3–40`.
 - Scale: `0.50–2.00`.
 - Opacity: `20–100%`.
 - Row style: class colors, threat gradient, or neutral blue.
-- Show or hide threat values.
-- Show or hide leader percentage.
-- Show or hide threat per second.
-- Abbreviate large numeric values.
+- Threat-value column.
+- Leader-percentage column.
+- TPS column.
+- Large-number abbreviation.
 
-### Behavior settings
+#### Behavior settings
 
 - Hide while out of combat.
 - Hide without a hostile NPC target.
 - Include pets and guardians.
-- Save the last-fight summary.
-- Lock the meter position.
+- Save last-fight summary.
+- Lock meter position.
 - Keep the local player's row visible.
-- Estimate local threat while solo.
-- Select Auto, Native, Server, or Local provider mode.
-- Automatically recover stale threat data.
-- Warn near the aggro-pull threshold.
-- Play a warning sound.
+- Estimate threat while solo.
+- Estimate group threat locally when exact data is unavailable.
+- Provider mode: Auto, Native, Server, or Local.
+- Automatic stale-data recovery.
+- Aggro warning and warning sound.
 - Warning threshold: `50–100%`.
 - Update interval: `0.10–1.00` seconds.
 - TPS averaging window: `2–15` seconds.
 
-### Settings action buttons
+#### Settings action buttons
 
 | Button | Action |
 |---|---|
 | **Preview** | Show demonstration rows |
-| **Refresh** | Restart transient threat data without changing settings |
+| **Refresh** | Restart transient threat data |
 | **Center** | Center and unlock the meter |
 | **Last fight** | Print the latest fight report |
 | **Defaults** | Reset the active character profile |
@@ -313,73 +332,67 @@ Header interactions:
 
 ---
 
-## Provider badges
+### Provider and state badges
 
 | Badge | Meaning |
 |---|---|
-| `NATIVE` | Exact absolute threat from a client-exposed native API |
-| `SERVER` | Exact absolute threat from the compatible server protocol |
-| `NATIVE %` | Precise percentage ordering without absolute threat or TPS |
-| `LOCAL EST` | Solo combat-log estimate; numeric values are prefixed with `~` |
-| `PREVIEW` | Demonstration rows generated by the test command or UI |
-| `REFRESH` | Roster and providers are being restarted |
-| `WAIT` | Waiting for eligible combat or fresh provider data |
-| `NO API` | Requested native provider is unavailable |
-| `NO GROUP` | Server provider requires a party or raid |
-| `NO DATA` | No usable provider returned data for the current situation |
-| `NO TARGET` | A valid hostile NPC target is not selected |
-| `IDLE` | Out of combat |
+| `NATIVE` | Exact absolute native threat |
+| `SERVER` | Exact compatible-server threat |
+| `NATIVE %` | Precise ordering and percentages only |
+| `GROUP EST` | Group combat-log estimate; values are prefixed with `~` |
+| `LOCAL EST` | Solo combat-log estimate; values are prefixed with `~` |
+| `PREVIEW` | Demonstration data |
+| `REFRESH` | Roster and providers are restarting |
+| `WAIT` | Waiting for combat or data within the explicitly selected provider mode |
+| `OFF` | The required local fallback is disabled |
+| `NO API` | Native-only mode requested but unavailable |
+| `NO GROUP` | Server-only mode requires a party or raid |
+| `NO DATA` | The requested provider cannot supply data for this situation |
+| `NO TARGET` | No valid hostile NPC target is selected |
+| `IDLE` | The local player and selected target are out of combat |
 
 ---
 
-## Per-character profiles
+### Per-character profiles
 
-MS Threat stores settings under realm-and-character keys inside:
+Profiles are stored under realm-and-character keys:
 
 ```text
 MSThreatDB.profiles["Realm::Character"]
 ```
 
-Each character keeps independent:
+Each profile keeps independent:
 
-- Meter position.
-- Width, scale, opacity, and row layout.
-- Visibility settings.
+- Meter position and dimensions.
+- Scale, opacity, and row layout.
+- Visibility options.
 - Provider mode.
 - Solo-estimation setting.
-- Pet display setting.
-- Aggro warning configuration.
+- Group-estimation setting.
+- Pet-display setting.
+- Aggro-warning configuration.
 - Automatic recovery configuration.
 - Last-fight report.
 
-List the active profile:
+Show the active profile:
 
 ```text
 /msthreat profile
 ```
 
-List every saved profile:
+List all profiles:
 
 ```text
 /msthreat profiles
 ```
 
-Resetting settings affects only the active character profile.
+`/msthreat reset` affects only the active character profile.
 
 ---
 
-## Recovery and group changes
+### Recovery
 
-Group and character transitions can briefly expose an incomplete roster on old clients. MS Threat includes several recovery mechanisms:
-
-- Debounced party and raid roster refreshes.
-- Group fingerprint checks for missed roster events.
-- Delayed provider synchronization after entering the world.
-- Short retention of the last valid native or server table through brief data gaps.
-- Enabled-by-default automatic stale-data recovery.
-- Manual settings-safe refresh through the header, settings UI, or command.
-
-Manual recovery:
+Manual recovery restarts only transient state:
 
 ```text
 /msthreat refresh
@@ -392,33 +405,33 @@ Aliases:
 /msthreat resetdata
 ```
 
-Refresh restarts transient roster, provider, server-query, local-estimator, TPS, and warning state. It does not change the active profile's saved configuration or meter position.
+Refresh clears and reacquires roster entries, native rows, compatible-server state, local-estimator rows, TPS history, provider selection, and warning state. It preserves the active profile's settings and meter position.
+
+Automatic recovery performs one settings-safe refresh after a valid current-target fight remains empty for the configured recovery delay.
 
 ---
 
-## Aggro warning
+### Aggro warning
 
-The warning is based on percentage toward the provider's aggro-pull threshold rather than only percentage of the current threat leader.
-
-When the local player crosses the configured threshold:
+The aggro warning uses percentage toward the provider's pull threshold when that value is available. When the local player crosses the configured threshold:
 
 - The header flashes.
-- An optional raid-warning sound plays.
+- An optional warning sound plays.
 - The warning resets after threat falls sufficiently below the threshold.
 
-The warning is suppressed for the current tank and for locally estimated rows.
+Warnings are suppressed for the current tank and for locally estimated rows.
 
 ---
 
-## Last-fight report
+### Last-fight report
 
-When absolute threat is available—either exact or locally estimated—MS Threat records each visible participant's:
+When absolute threat is available—exact or estimated—MS Threat can record:
 
-- Peak threat.
+- Peak threat per visible participant.
 - Maximum rolling TPS.
 - Fight duration.
 - Provider used.
-- Whether the report is estimated.
+- Whether the report was estimated.
 
 Print the latest report:
 
@@ -426,13 +439,13 @@ Print the latest report:
 /msthreat report
 ```
 
-Percentage-only data is not stored as if it were absolute threat.
+Percentage-only data is not stored as absolute threat.
 
 ---
 
-## Commands
+### Commands
 
-### Primary aliases
+#### Primary aliases
 
 ```text
 /msthreat
@@ -440,16 +453,16 @@ Percentage-only data is not stored as if it were absolute threat.
 /msthreatmeter
 ```
 
-### Legacy aliases
+#### Legacy aliases
 
 ```text
 /othreat
 /octothreat
 ```
 
-All primary and legacy aliases use the same command dispatcher.
+All aliases use the same command dispatcher.
 
-### Configuration and visibility
+#### Configuration and visibility
 
 | Command | Description |
 |---|---|
@@ -460,7 +473,7 @@ All primary and legacy aliases use the same command dispatcher.
 | `/msthreat hide` | Disable and hide the meter. |
 | `/msthreat toggle` | Toggle the meter's enabled state. |
 
-### Positioning and preview
+#### Positioning and preview
 
 | Command | Description |
 |---|---|
@@ -469,61 +482,156 @@ All primary and legacy aliases use the same command dispatcher.
 | `/msthreat center` | Center and unlock the meter. |
 | `/msthreat test` | Show demonstration rows for 15 seconds. |
 
-### Providers and recovery
+#### Providers and local estimation
 
 | Command | Description |
 |---|---|
-| `/msthreat provider auto` | Prefer the best available exact source, with solo estimate fallback. |
+| `/msthreat provider auto` | Prefer exact native/server data, then the appropriate local estimate or percentage table. |
 | `/msthreat provider native` | Use only client-exposed native threat data. |
-| `/msthreat provider server` | Use only the compatible server threat protocol. |
-| `/msthreat provider local` | Use only the local solo estimator. |
-| `/msthreat refresh` | Restart transient roster and provider state without changing settings. |
+| `/msthreat provider server` | Use only the compatible exact server protocol. |
+| `/msthreat provider local` | Use only local estimation for the current solo/group state. |
+| `/msthreat soloest on` | Enable solo local estimation. |
+| `/msthreat soloest off` | Disable solo local estimation. |
+| `/msthreat soloestimate on\|off` | Alias for `soloest`. |
+| `/msthreat groupest on` | Enable grouped local estimation. |
+| `/msthreat groupest off` | Disable grouped local estimation. |
+| `/msthreat groupestimate on\|off` | Alias for `groupest`. |
+
+#### Recovery
+
+| Command | Description |
+|---|---|
+| `/msthreat refresh` | Restart transient threat data without changing settings. |
 | `/msthreat recover` | Alias for Refresh. |
 | `/msthreat resetdata` | Alias for Refresh. |
 
-### Profiles and reports
+#### Profiles and reports
 
 | Command | Description |
 |---|---|
-| `/msthreat profile` | Show the active realm-and-character profile and profile count. |
+| `/msthreat profile` | Show the active profile and saved-profile count. |
 | `/msthreat profile status` | Alias for the active-profile summary. |
-| `/msthreat profiles` | List all saved character profiles. |
+| `/msthreat profiles` | List all saved realm-and-character profiles. |
 | `/msthreat profile list` | Alias for listing profiles. |
 | `/msthreat report` | Print the most recently recorded fight. |
 
-### Diagnostics and reset
+#### Diagnostics and reset
 
 | Command | Description |
 |---|---|
-| `/msthreat status` | Print target, profile, migration, group, combat, provider, server-packet, local-estimator, and recovery diagnostics. |
-| `/msthreat bootstrap` | Print early bootstrap and load-stage diagnostics. |
-| `/msthreat loadstatus` | Alias for bootstrap diagnostics. |
+| `/msthreat status` | Print profile, combat-scope, provider, server, fallback, local-parser, and recovery diagnostics. |
+| `/msthreat bootstrap` | Print early command-bootstrap and initialization diagnostics. |
+| `/msthreat loadstatus` | Alias for Bootstrap. |
 | `/msthreat reset` | Restore defaults only for the active character profile. |
 | `/msthreat help` | Print command help. |
 
 ---
 
-## Saved variables and migration
+### Troubleshooting
 
-### Current saved variable
+#### The meter remains in WAIT after changing characters
+
+Version 1.0.8 repairs the provider and combat-state causes of this issue. Verify:
+
+```text
+/msthreat status
+```
+
+The output should show:
+
+```text
+Version 1.0.8
+Provider mode: AUTO
+Fallbacks: solo on | group on
+```
+
+For ordinary grouped targets without exact data, the meter should switch to `GROUP EST` after the player or selected target enters combat.
+
+#### The meter says IDLE while another party member is fighting
+
+This is intentional when neither the local player nor selected target is in that fight. Threat is scoped to the selected target rather than unrelated group activity.
+
+#### Group-estimated rows do not increase
+
+Confirm:
+
+- **Estimate group threat locally** is enabled.
+- Provider mode is `AUTO` or `LOCAL`.
+- A living hostile NPC is selected.
+- The local client receives party or raid combat messages for that target.
+
+Use:
+
+```text
+/msthreat status
+```
+
+The local diagnostics report matched group events, rejected sources, and unmatched messages.
+
+#### Server mode shows NO DATA or WAIT
+
+Server-only mode normally requires a grouped elite or world-boss encounter supported by the connected environment. Use Auto mode for broader coverage:
+
+```text
+/msthreat provider auto
+```
+
+#### Commands are unrecognized
+
+Confirm:
+
+```text
+World of Warcraft\Interface\AddOns\MSThreat\MSThreat.toc
+```
+
+Enable script errors and reload:
+
+```text
+/console scriptErrors 1
+/reload
+```
+
+Then use:
+
+```text
+/msthreat bootstrap
+```
+
+#### Settings did not migrate from OctoThreat
+
+Confirm both `MSThreat` and the temporary `OctoThreat` migration bridge are installed and enabled. Then run:
+
+```text
+/msthreat status
+```
+
+Log out normally after migration so the new account-wide database is written.
+
+---
+
+### Known limitations
+
+- MS Threat tracks only the currently selected hostile NPC.
+- Native threat availability depends on the client build.
+- Compatible exact-server availability depends on the connected environment and encounter eligibility.
+- Group and solo local estimates cannot reconstruct hidden flat threat, all stance/talent/buff modifiers, taunts, resets, partial wipes, overheal rules, or encounter-specific mechanics.
+- Other players' hidden stance, talents, and threat modifiers cannot be determined reliably from combat messages.
+- Combat-message matching is name-based; simultaneous enemies with identical names can be ambiguous.
+- Local group estimates include only messages visible to the local client.
+- Percentage-only providers cannot supply absolute threat or TPS.
+- A manual or automatic refresh begins a new tracking segment; a useful completed segment may become the latest fight report.
+
+---
+
+### Saved variables and temporary legacy identifiers
+
+Current account-wide database:
 
 ```text
 MSThreatDB
 ```
 
-This account-wide table contains separate realm-and-character profiles.
-
-### Legacy saved variable
-
-```text
-OctoThreatDB
-```
-
-During the migration update, the legacy table is deep-copied into `MSThreatDB`. Existing native MS Threat data takes precedence. The legacy table remains intact as a backup.
-
-### Temporary compatibility identifiers
-
-The following legacy identifiers intentionally remain during the transition:
+Temporary legacy identifiers retained for migration or integration compatibility:
 
 ```text
 OctoThreat
@@ -533,137 +641,27 @@ OctoThreatDB
 /octothreat
 ```
 
-- `OctoThreat` is a runtime alias to the new `MSThreat` addon table.
-- `OctoThreat_CommandDispatch` points to the new command dispatcher.
-- `OctoThreatDB` is read only when the migration bridge loads it.
-- Legacy slash commands remain supported for macros and existing habits.
+`OctoThreatDB` is read only when the migration bridge loads it and is not erased automatically.
 
 ---
 
-## Troubleshooting
-
-### The addon is enabled but commands are unrecognized
-
-Confirm this path exists:
-
-```text
-World of Warcraft\Interface\AddOns\MSThreat\MSThreat.toc
-```
-
-Then enable script errors and reload:
-
-```text
-/console scriptErrors 1
-/reload
-```
-
-The early command bootstrap is designed to keep `/msthreat` available even when a later file fails. Try:
-
-```text
-/msthreat bootstrap
-```
-
-### Settings did not migrate
-
-Confirm both sibling folders are installed and enabled:
-
-```text
-MSThreat
-OctoThreat
-```
-
-The second entry should be titled **MS Threat Legacy Migration**. Then run:
-
-```text
-/msthreat status
-```
-
-Log out normally after migration so `MSThreatDB` is written.
-
-### The meter remains in WAIT after changing characters or groups
-
-Use the settings-safe refresh:
-
-```text
-/msthreat refresh
-```
-
-Also confirm:
-
-- Provider mode is `AUTO`.
-- **Estimate my threat while solo** is enabled for solo play.
-- **Auto-recover stale threat data** is enabled.
-- A living hostile NPC is selected.
-
-Print full diagnostics:
-
-```text
-/msthreat status
-```
-
-### The server provider reports NO GROUP or NO DATA
-
-The compatible server protocol normally requires:
-
-- A party or raid.
-- An elite creature or world boss.
-- Active group combat.
-- Server support for the protocol.
-
-Use Auto mode so native and local sources remain available where applicable:
-
-```text
-/msthreat provider auto
-```
-
-### The meter does not show out of combat
-
-Disable **Hide while out of combat** in the Behavior tab. This is the master out-of-combat visibility setting.
-
-### The meter does not record a solo fight
-
-Use:
-
-```text
-/msthreat provider auto
-```
-
-Enable **Estimate my threat while solo**, select a hostile NPC, and begin combat. Local values should display with `LOCAL EST` and `~`.
-
----
-
-## Known limitations
-
-- MS Threat tracks only the currently selected hostile NPC.
-- Native threat availability depends on the client build.
-- Compatible server-protocol availability and encounter eligibility depend on the connected server environment.
-- The local solo estimator cannot reconstruct every hidden flat-threat value, talent modifier, buff modifier, taunt, reset, partial wipe, overheal rule, or encounter-specific mechanic.
-- Combat-log matching uses target names; simultaneous enemies with identical names cannot always be distinguished perfectly.
-- Local estimation is solo-only and does not attempt to infer unseen party or raid members' threat.
-- Percentage-only providers cannot supply absolute threat or TPS.
-- A manual or automatic soft refresh begins a new tracking segment; any useful completed segment may become the latest fight report.
-
----
-
-## Compatibility
-
-MS Threat targets:
+### Compatibility
 
 ```text
 World of Warcraft 1.12.1
 Interface 11200
 ```
 
-It uses frame-based Lua compatible with the original 1.12.1 addon environment and does not require modern Retail or current Classic APIs.
+MS Threat uses frame-based Lua compatible with the original 1.12.1 addon environment and does not require modern Retail or current Classic APIs.
 
 ---
 
-## License
+### License
 
 MS Threat is distributed under the MIT License. See `LICENSE` for the complete terms.
 
 ---
 
-## Publisher disclaimer
+### Publisher disclaimer
 
 > MoobStack is an independent community addon publisher. These addons are not affiliated with, authorized by, or endorsed by Blizzard Entertainment or any community server project. World of Warcraft and related marks are the property of their respective owners.

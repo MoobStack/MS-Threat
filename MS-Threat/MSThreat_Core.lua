@@ -1,8 +1,9 @@
 -- MSThreat_Core.lua
 -- Standalone current-target threat display for the World of Warcraft 1.12.1 client.
--- Exact native/server threat is always preferred. During ordinary solo combat,
--- when no exact numeric source is available, MS Threat can display a clearly
--- marked LOCAL EST value calculated only from this client's combat messages.
+-- Exact native/server threat is always preferred. During ordinary solo or
+-- grouped combat, when no exact numeric source is available, MS Threat can
+-- display clearly marked local estimates calculated from this client's combat
+-- messages.
 -- No peer addon is required for either path.
 
 MSThreat = MSThreat or {}
@@ -12,7 +13,7 @@ local OT = MSThreat
 OT.name = "MSThreat"
 OT.displayName = "MS Threat"
 OT.publisher = "MoobStack"
-OT.version = "1.0.7"
+OT.version = "1.0.8"
 OT.interfaceVersion = 11200
 OT.coreLoaded = true
 OT.loadStage = "core file executing"
@@ -138,6 +139,7 @@ OT.defaults = {
     alwaysShowPlayer = true,
     keepLastFight = true,
     soloFallback = true,
+    groupFallback = true,
     autoRecover = true,
     recoveryDelay = 4.0,
     colorMode = "CLASS",
@@ -241,6 +243,7 @@ OT.playerRegenEnabledAt = 0
 OT.regenState = "UNKNOWN"
 OT.lastRegenEventAt = 0
 OT.lastCombatEvidenceReason = "none"
+OT.combatScope = "PLAYER_TARGET"
 OT.serverQueryTargetName = nil
 OT.serverPacketAccepted = 0
 OT.serverPacketRejected = 0
@@ -357,7 +360,7 @@ function OT:MigrateLegacySavedVariables()
             MSThreatDB._moobStackMigration = marker
         end
         MSThreatDB._moobStackMigration.octoThreat106 = 1
-        MSThreatDB._moobStackMigration.completedBy = "MS Threat 1.0.7"
+        MSThreatDB._moobStackMigration.completedBy = "MS Threat 1.0.8"
         MSThreatDB._moobStackMigration.sourceVersion = self.legacyMigrationSourceVersion
         MSThreatDB._moobStackMigration.completedAt = SafeTimestamp()
         self.legacyImportedAtLoad = true
@@ -732,6 +735,23 @@ local function NormalizeRosterName(name)
     return normalized
 end
 
+function OT:ResolveRosterEntry(name)
+    local entry
+    local normalizedName
+    if not name or name == "" then
+        return nil
+    end
+    entry = self.rosterByName[name]
+    if entry then
+        return entry
+    end
+    normalizedName = NormalizeRosterName(name)
+    if normalizedName then
+        return self.rosterByNormalizedName[normalizedName]
+    end
+    return nil
+end
+
 local function AddRosterUnit(unitToken, isPet, ownerName)
     local name
     local localizedClass
@@ -928,27 +948,16 @@ function OT:GetTargetKey()
 end
 
 function OT:HasLiveCombatEvidence()
-    local i
-    local rosterEntry
-    local unit
-
+    -- Threat is always scoped to the selected target. A party member fighting
+    -- somewhere else must not keep this meter in WAIT after the local player
+    -- and selected target have left combat. PLAYER_REGEN_DISABLED and explicit
+    -- current-target combat messages still provide the short old-client latch.
     if UnitAffectingCombat("player") then
         return true
     end
     if UnitExists("target") and UnitAffectingCombat("target") then
         return true
     end
-
-    for i = 1, table.getn(self.rosterUnits) do
-        rosterEntry = self.rosterUnits[i]
-        if rosterEntry then
-            unit = rosterEntry.unit
-            if unit and UnitExists(unit) and UnitAffectingCombat(unit) then
-                return true
-            end
-        end
-    end
-
     return false
 end
 
@@ -968,21 +977,19 @@ function OT:IsGroupInCombat()
         return true
     end
 
-    -- PLAYER_REGEN_DISABLED is the old client's authoritative combat-start
-    -- event. Keep the fight active until PLAYER_REGEN_ENABLED instead of
-    -- allowing a momentary false UnitAffectingCombat result (common around
-    -- stealth, stance, target, and roster transitions) to tear providers down.
-    if self.regenState == "COMBAT" then
-        return true
-    end
-
-    -- A local combat message can arrive before PLAYER_REGEN_DISABLED. Latch it
-    -- long enough for the client state to catch up and for fast rogue openers or
-    -- killing blows to be recorded.
-    if (self.inCombat or self.regenState == "EVIDENCE")
+    -- PLAYER_REGEN_DISABLED and combat messages start a short latch, but the
+    -- latch must never remain permanent when the old client omits or delays a
+    -- matching PLAYER_REGEN_ENABLED event. Live player/target flags refresh the
+    -- timestamp above, so a transient stealth or roster sample remains covered.
+    if (self.inCombat or self.regenState == "COMBAT" or self.regenState == "EVIDENCE")
         and self.lastCombatEvidenceAt > 0
         and now - self.lastCombatEvidenceAt <= (self.combatGraceSeconds or 2.50) then
         return true
+    end
+
+    if self.regenState == "COMBAT" or self.regenState == "EVIDENCE" then
+        self.regenState = "IDLE"
+        self.lastCombatEvidenceReason = "expired current-target combat latch"
     end
 
     return false
@@ -1189,10 +1196,14 @@ function OT:CanQueryServer()
     if classification ~= "elite" and classification ~= "worldboss" then
         return false
     end
-    -- Query from the latched combat state rather than requiring the target's
-    -- combat flag to be true on this exact frame. The server remains the final
-    -- authority and simply ignores requests made outside an eligible fight.
+    -- The server protocol is target-scoped. Do not query merely because a
+    -- different party member is fighting somewhere else. The short combat
+    -- latch still covers old-client event ordering around a real current fight.
     if not self:IsGroupInCombat() then
+        return false
+    end
+    if not UnitAffectingCombat("player") and not UnitAffectingCombat("target")
+        and self.regenState ~= "COMBAT" then
         return false
     end
 
@@ -1371,6 +1382,23 @@ local function RowsAllHaveAbsoluteThreat(rows)
     return true
 end
 
+function OT:IsLocalFallbackEnabled()
+    if not self.db then
+        return false
+    end
+    if self:GetGroupSize() > 0 then
+        return self.db.groupFallback and true or false
+    end
+    return self.db.soloFallback and true or false
+end
+
+function OT:GetLocalProviderLabel()
+    if self:GetGroupSize() > 0 then
+        return "GROUP EST"
+    end
+    return "LOCAL EST"
+end
+
 function OT:SelectProviderRows()
     local mode = self.db.providerMode or "AUTO"
     local now = GetTime()
@@ -1382,8 +1410,9 @@ function OT:SelectProviderRows()
     local nativeAbsolute = nativeFresh and RowsAllHaveAbsoluteThreat(self.nativeRows)
     local localRows = nil
     local localFresh = false
+    local localLabel = self:GetLocalProviderLabel()
 
-    if self.Local and self.Local.GetRows and self.db.soloFallback then
+    if self.Local and self.Local.GetRows and self:IsLocalFallbackEnabled() then
         localRows = self.Local:GetRows()
         localFresh = localRows and table.getn(localRows) > 0
     end
@@ -1400,8 +1429,8 @@ function OT:SelectProviderRows()
         end
         return nil, "NONE", false, false, false
     elseif mode == "LOCAL" then
-        if localFresh and self:GetGroupSize() == 0 then
-            return localRows, "LOCAL EST", false, true, true
+        if localFresh then
+            return localRows, localLabel, false, true, true
         end
         return nil, "NONE", false, false, false
     end
@@ -1413,16 +1442,16 @@ function OT:SelectProviderRows()
         return self.serverRows, "SERVER", true, true, false
     end
 
-    -- While solo, prefer a numeric local estimate over a percentage-only
-    -- native sample. The native threat status is still used to mark aggro.
-    if localFresh and self:GetGroupSize() == 0 then
-        return localRows, "LOCAL EST", false, true, true
-    end
-    if nativeFresh then
+    -- A native percentage table is more authoritative than a reconstructed
+    -- group estimate. While solo, retain the numeric local estimate preference.
+    if nativeFresh and self:GetGroupSize() > 0 then
         return self.nativeRows, "NATIVE %", true, false, false
     end
     if localFresh then
-        return localRows, "LOCAL EST", false, true, true
+        return localRows, localLabel, false, true, true
+    end
+    if nativeFresh then
+        return self.nativeRows, "NATIVE %", true, false, false
     end
 
     return nil, "NONE", false, false, false
@@ -1844,7 +1873,7 @@ function OT:RefreshThreatData(reason, announce, automatic, watchdogAttempt, skip
         if self.Local.ResetTarget then
             self.Local:ResetTarget(self.currentTargetKey, self.currentTargetName)
         end
-        if self.inCombat and self:GetGroupSize() == 0 and self.db.soloFallback
+        if self.inCombat and self:IsLocalFallbackEnabled()
             and self.Local.StartCombat then
             self.Local:StartCombat()
         end
@@ -1916,7 +1945,7 @@ function OT:CheckAutoRecovery(now)
 
     canExpectData = self.nativeAvailable or self.nativePercentAvailable
         or self:CanQueryServer()
-        or (self.db.soloFallback and self:GetGroupSize() == 0)
+        or self:IsLocalFallbackEnabled()
     if not canExpectData then
         self.noDataSince = 0
         return false
@@ -1985,6 +2014,7 @@ end
 function OT:GetStatusText()
     local now = GetTime()
     local classification
+    local grouped = self:GetGroupSize() > 0
 
     if self.testUntil > now then
         return "Preview data", "PREVIEW"
@@ -1997,12 +2027,21 @@ function OT:GetStatusText()
         return "Target a hostile NPC", "NO TARGET"
     end
 
+    -- Out-of-combat state takes precedence over provider readiness. This keeps
+    -- another group member's unrelated fight from presenting a false WAIT.
+    if not self.inCombat then
+        return "Out of combat", "IDLE"
+    end
+
     if table.getn(self.displayRows) == 0 and self.dataRefreshNoticeUntil > now then
         return "Refreshing roster and threat providers", "REFRESH"
     end
 
     if table.getn(self.displayRows) > 0 then
         if self.currentProviderEstimated then
+            if grouped then
+                return "Estimated group threat from local combat messages", "GROUP EST"
+            end
             return "Estimated solo threat from local combat messages", "LOCAL EST"
         elseif self.currentProviderAbsolute then
             return "Exact threat", self.currentProvider
@@ -2010,61 +2049,76 @@ function OT:GetStatusText()
         return "Exact ordering; percentages only", self.currentProvider
     end
 
-    if not self.inCombat then
-        return "Out of combat", "IDLE"
-    end
-
     if self.db.providerMode == "NATIVE" and not self.nativeAvailable and not self.nativePercentAvailable then
         return "Native threat API is unavailable", "NO API"
     end
 
     if self.db.providerMode == "LOCAL" then
-        if not self.db.soloFallback then
+        if grouped and not self.db.groupFallback then
+            return "Local group estimation is disabled", "OFF"
+        elseif not grouped and not self.db.soloFallback then
             return "Local solo estimation is disabled", "OFF"
-        elseif self:GetGroupSize() > 0 then
-            return "Local estimation is solo-only", "NO DATA"
+        elseif grouped then
+            return "Waiting for local group combat events", "WAIT"
         end
         return "Waiting for local solo combat data", "WAIT"
     end
 
     if self.db.providerMode == "SERVER" and not self:CanQueryServer() then
         classification = UnitClassification("target") or "normal"
-        if self:GetGroupSize() <= 0 then
+        if not grouped then
             return "Server threat requires a party or raid", "NO GROUP"
         elseif classification ~= "elite" and classification ~= "worldboss" then
             return "Server threat supports elite targets and bosses", "NO DATA"
-        elseif not UnitAffectingCombat("target") then
-            return "Waiting for the target to enter combat", "WAIT"
+        elseif not UnitAffectingCombat("target") and not UnitAffectingCombat("player") then
+            return "Waiting for the selected target to enter combat", "WAIT"
         end
-        return "Waiting for group combat", "WAIT"
+        return "Waiting for current-target group combat", "WAIT"
     end
 
     classification = UnitClassification("target") or "normal"
-    if self:GetGroupSize() == 0 and self.db.providerMode == "AUTO" and not self.db.soloFallback then
+    if not grouped and self.db.providerMode == "AUTO" and not self.db.soloFallback then
         return "Solo local estimate is disabled in settings", "NO DATA"
     end
-    if not self.nativeAvailable and not self.nativePercentAvailable and self:GetGroupSize() == 0 then
-        if self.db.soloFallback then
+    if grouped and self.db.providerMode == "AUTO" and not self.db.groupFallback
+        and not self.nativeAvailable and not self.nativePercentAvailable
+        and not self:CanQueryServer() then
+        return "Group local estimate is disabled in settings", "NO DATA"
+    end
+
+    if not self.nativeAvailable and not self.nativePercentAvailable then
+        if self:IsLocalFallbackEnabled() then
+            if grouped then
+                return "Waiting for local group combat events", "WAIT"
+            end
             return "Waiting for local combat events", "WAIT"
         end
-        return "Exact group threat requires a party or raid", "NO GROUP"
+        if not grouped then
+            return "Exact group threat requires a party or raid", "NO GROUP"
+        end
     end
 
     if self.serverEverResponded and now - self.serverLastResponse > self:GetServerHoldSeconds() then
+        if self:IsLocalFallbackEnabled() then
+            return "Exact data expired; rebuilding a local estimate", "WAIT"
+        end
         return "Waiting for refreshed threat data", "WAIT"
-    end
-
-    if not self.nativeAvailable and not self.nativePercentAvailable
-        and classification ~= "elite" and classification ~= "worldboss" then
-        return "Server threat may require an elite or boss", "WAIT"
     end
 
     if self:CanQueryServer() and now - self.targetChangedAt > 4 and not self.serverEverResponded
         and not self.nativeAvailable and not self.nativePercentAvailable then
+        if self:IsLocalFallbackEnabled() then
+            return "No exact response; using local combat events", "WAIT"
+        end
         return "No exact threat response; use /msthreat status", "NO DATA"
     end
 
-    return "Waiting for exact threat data", "WAIT"
+    if grouped and classification ~= "elite" and classification ~= "worldboss"
+        and self:IsLocalFallbackEnabled() then
+        return "Estimating normal-target group threat locally", "GROUP EST"
+    end
+
+    return "Waiting for threat data", "WAIT"
 end
 
 function OT:GetTestRows()
@@ -2412,7 +2466,10 @@ function OT:PrintStatus()
     Print("Provider mode: " .. tostring(self.db.providerMode)
         .. " | active: " .. tostring(self.currentProvider)
         .. " | rows: " .. tostring(table.getn(self.displayRows)))
+    Print("Fallbacks: solo " .. (self.db.soloFallback and "on" or "off")
+        .. " | group " .. (self.db.groupFallback and "on" or "off"))
     Print("Combat: " .. (self.inCombat and "yes" or "no")
+        .. " | scope: current player/target"
         .. " | latch: " .. tostring(self.regenState or "UNKNOWN")
         .. " | last evidence: " .. ((self.lastCombatEvidenceAt or 0) > 0
             and string.format("%.1fs", GetTime() - self.lastCombatEvidenceAt) or "never")
@@ -2447,7 +2504,9 @@ function OT:PrintHelp()
     Print("/msthreat test | status | report | refresh")
     Print("/msthreat profile | profiles - show the active character profile or list saved profiles")
     Print("/msthreat provider auto|native|server|local")
+    Print("/msthreat soloest on|off | groupest on|off")
     Print("/msthreat refresh | recover | resetdata - restart threat data without changing settings")
+    Print("/msthreat bootstrap | loadstatus - show early load diagnostics")
     Print("/msthreat reset - restore defaults for the active character profile")
 end
 
@@ -2508,6 +2567,22 @@ function OT:HandleSlash(message)
     elseif lower == "refresh" or lower == "recover" or lower == "resetdata" then
         self:StopTest()
         self:RefreshThreatData("manual data refresh", true, false, false)
+    elseif lower == "soloest on" or lower == "soloestimate on" then
+        self.db.soloFallback = true
+        self:RefreshThreatData("solo estimate enabled", false, false, false)
+        Print("Solo local estimation enabled.")
+    elseif lower == "soloest off" or lower == "soloestimate off" then
+        self.db.soloFallback = false
+        self:RefreshThreatData("solo estimate disabled", false, false, false)
+        Print("Solo local estimation disabled.")
+    elseif lower == "groupest on" or lower == "groupestimate on" then
+        self.db.groupFallback = true
+        self:RefreshThreatData("group estimate enabled", false, false, false)
+        Print("Group local estimation enabled.")
+    elseif lower == "groupest off" or lower == "groupestimate off" then
+        self.db.groupFallback = false
+        self:RefreshThreatData("group estimate disabled", false, false, false)
+        Print("Group local estimation disabled.")
     elseif lower == "reset" then
         self:ResetSettings(false)
         Print("Settings reset.")
@@ -2572,11 +2647,17 @@ OT.eventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
 OT.eventFrame:RegisterEvent("UNIT_PET")
 OT.eventFrame:RegisterEvent("CHAT_MSG_ADDON")
 OT.eventFrame:RegisterEvent("CHAT_MSG_COMBAT_SELF_HITS")
+OT.eventFrame:RegisterEvent("CHAT_MSG_COMBAT_PARTY_HITS")
+OT.eventFrame:RegisterEvent("CHAT_MSG_COMBAT_FRIENDLYPLAYER_HITS")
 OT.eventFrame:RegisterEvent("CHAT_MSG_COMBAT_SELF_MISSES")
 OT.eventFrame:RegisterEvent("CHAT_MSG_COMBAT_CREATURE_VS_SELF_HITS")
 OT.eventFrame:RegisterEvent("CHAT_MSG_COMBAT_CREATURE_VS_SELF_MISSES")
 OT.eventFrame:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE")
 OT.eventFrame:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
+OT.eventFrame:RegisterEvent("CHAT_MSG_SPELL_PARTY_DAMAGE")
+OT.eventFrame:RegisterEvent("CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE")
+OT.eventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_PARTY_DAMAGE")
+OT.eventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_DAMAGE")
 OT.eventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE")
 OT.eventFrame:RegisterEvent("CHAT_MSG_SPELL_DAMAGESHIELDS_ON_SELF")
 OT.eventFrame:RegisterEvent("CHAT_MSG_SPELL_DAMAGESHIELDS_ON_OTHERS")
@@ -2585,7 +2666,9 @@ OT.eventFrame:RegisterEvent("CHAT_MSG_SPELL_PET_DAMAGE")
 OT.eventFrame:RegisterEvent("CHAT_MSG_SPELL_SELF_BUFF")
 OT.eventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS")
 OT.eventFrame:RegisterEvent("CHAT_MSG_SPELL_FRIENDLYPLAYER_BUFF")
+OT.eventFrame:RegisterEvent("CHAT_MSG_SPELL_PARTY_BUFF")
 OT.eventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_BUFFS")
+OT.eventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_PARTY_BUFFS")
 OT.eventFrame:RegisterEvent("PLAYER_DEAD")
 OT.eventFrame:RegisterEvent("PLAYER_ALIVE")
 
@@ -2660,11 +2743,17 @@ OT.eventFrame:SetScript("OnEvent", function()
             OT:RefreshDisplay(true)
         end
     elseif event == "CHAT_MSG_COMBAT_SELF_HITS"
+        or event == "CHAT_MSG_COMBAT_PARTY_HITS"
+        or event == "CHAT_MSG_COMBAT_FRIENDLYPLAYER_HITS"
         or event == "CHAT_MSG_COMBAT_SELF_MISSES"
         or event == "CHAT_MSG_COMBAT_CREATURE_VS_SELF_HITS"
         or event == "CHAT_MSG_COMBAT_CREATURE_VS_SELF_MISSES"
         or event == "CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE"
         or event == "CHAT_MSG_SPELL_SELF_DAMAGE"
+        or event == "CHAT_MSG_SPELL_PARTY_DAMAGE"
+        or event == "CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE"
+        or event == "CHAT_MSG_SPELL_PERIODIC_PARTY_DAMAGE"
+        or event == "CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_DAMAGE"
         or event == "CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE"
         or event == "CHAT_MSG_SPELL_DAMAGESHIELDS_ON_SELF"
         or event == "CHAT_MSG_SPELL_DAMAGESHIELDS_ON_OTHERS"
@@ -2673,7 +2762,9 @@ OT.eventFrame:SetScript("OnEvent", function()
         or event == "CHAT_MSG_SPELL_SELF_BUFF"
         or event == "CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS"
         or event == "CHAT_MSG_SPELL_FRIENDLYPLAYER_BUFF"
-        or event == "CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_BUFFS" then
+        or event == "CHAT_MSG_SPELL_PARTY_BUFF"
+        or event == "CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_BUFFS"
+        or event == "CHAT_MSG_SPELL_PERIODIC_PARTY_BUFFS" then
         local combatEvidence = event == "CHAT_MSG_COMBAT_SELF_HITS"
             or event == "CHAT_MSG_COMBAT_SELF_MISSES"
                     or event == "CHAT_MSG_COMBAT_CREATURE_VS_SELF_HITS"

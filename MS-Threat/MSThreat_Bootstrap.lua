@@ -6,7 +6,7 @@ OctoThreat = MSThreat -- Temporary runtime compatibility alias.
 local OT = MSThreat
 
 OT.bootstrapLoaded = true
-OT.bootstrapVersion = "1.0.7"
+OT.bootstrapVersion = "1.0.8"
 OT.loadStage = "bootstrap loaded"
 OT.displayName = "MS Threat"
 OT.publisher = "MoobStack"

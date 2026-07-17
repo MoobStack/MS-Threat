@@ -1,20 +1,28 @@
-# Updating from OctoThreat 1.0.6 to MS Threat 1.0.7
+# Upgrading to MS Threat 1.0.8
+
+## From MS Threat 1.0.7
 
 1. Completely exit World of Warcraft.
-2. Delete or move the existing full `Interface\AddOns\OctoThreat` addon-code folder. Saved variables under `WTF` are unaffected.
-3. Extract `MoobStack-MSThreat-v1.0.7-Update.zip` directly into `Interface\AddOns`.
-4. Confirm these sibling paths exist:
+2. Replace `Interface\AddOns\MSThreat` with the new `MSThreat` folder.
+3. Preserve the `WTF` directory.
+4. Log in and run:
 
    ```text
-   Interface\AddOns\MSThreat\MSThreat.toc
-   Interface\AddOns\OctoThreat\OctoThreat.toc
+   /msthreat status
    ```
 
-5. Enable **MS Threat** and **MS Threat Legacy Migration**.
-6. Log in and run `/msthreat status`.
-7. Confirm the saved-data line says `legacy OctoThreatDB imported this session` or `legacy migration complete`.
-8. Log out normally to save `MSThreatDB`.
-9. Verify profiles and settings on the relevant characters.
-10. Remove the temporary `OctoThreat` bridge after migration is confirmed.
+5. Confirm:
 
-The legacy `OctoThreatDB` data is not erased automatically.
+   ```text
+   Version 1.0.8
+   Provider mode: AUTO
+   Fallbacks: solo on | group on
+   ```
+
+All existing profiles, positions, settings, and fight reports are preserved. Existing profiles receive the new `groupFallback` value through normal default filling.
+
+## Directly from OctoThreat
+
+Use the Update archive, which contains `MSThreat` and a small `OctoThreat` migration bridge. Enable both AddOns-screen entries, log into the affected characters, verify `/msthreat status`, and log out normally.
+
+The bridge copies `OctoThreatDB` into `MSThreatDB` without erasing the former data. After migration survives another login, the temporary `OctoThreat` bridge can be removed.

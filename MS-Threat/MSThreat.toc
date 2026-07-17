@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: |cff55c8ffMS Threat|r
-## Notes: Clean current-target threat meter with isolated character profiles, independent threat providers, solo estimates, and recovery controls for the World of Warcraft 1.12.1 client.
+## Notes: Clean current-target threat meter with isolated character profiles, independent threat providers, solo/group local estimates, target-scoped combat state, and recovery controls for the World of Warcraft 1.12.1 client.
 ## Author: MoobStack
-## Version: 1.0.7
+## Version: 1.0.8
 ## SavedVariables: MSThreatDB
 ## OptionalDeps: OctoThreat
 ## X-Category: Combat

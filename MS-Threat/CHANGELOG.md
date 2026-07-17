@@ -1,50 +1,29 @@
 # Changelog
 
-## 1.0.7
+### 1.0.8
+
+- Fixed a cross-character and grouped-combat failure that could leave the meter permanently showing `WAIT` after changing characters.
+- Added a per-profile **group local-estimation fallback** for ordinary grouped targets when exact native or compatible server data is unavailable.
+- Added the `GROUP EST` provider badge and clearly marked estimated group rows.
+- Added `/msthreat groupest on|off` and `/msthreat soloest on|off` commands.
+- Added a Behavior-page option named **Estimate group threat locally**.
+- Changed combat-state detection to use the local player and selected target rather than any group member fighting elsewhere.
+- Added automatic expiry of a stale combat latch when an old client misses or delays the expected combat-end event.
+- Restricted exact server queries to combat involving the selected target, preventing unrelated group activity from keeping the provider in `WAIT`.
+- Added local parsing for visible party and raid damage and healing messages against the current target.
+- Kept native absolute threat, compatible server threat, and native percentage tables ahead of local estimates in Auto mode.
+- Re-baselined roster, native, server, local-estimator, TPS, warning, and recovery state when the active character profile changes.
+- Updated `/msthreat status` with combat-scope and separate solo/group fallback diagnostics.
+- Preserved existing profiles, positions, appearance settings, provider choices, fight reports, primary commands, and legacy command aliases.
+- Updated GitHub documentation, release notes, upgrade instructions, and validation materials for version 1.0.8.
+
+### 1.0.7
 
 - Rebranded **OctoThreat** as **MS Threat** under the MoobStack publisher.
-- Renamed the addon folder, TOC, source files, addon table, frames, UI branding, diagnostics, documentation, and primary saved-variable table to MS-prefixed names.
-- Added `/msthreat`, `/mst`, and `/msthreatmeter` as primary aliases.
-- Retained `/othreat` and `/octothreat` as legacy aliases.
-- Added settings-preserving migration from `OctoThreatDB` to `MSThreatDB` without deleting the legacy data.
-- Added a temporary legacy migration bridge for update installations.
-- Preserved all realm-and-character profiles, positions, provider choices, appearance settings, behavior settings, recovery settings, and fight reports.
-- Replaced server-specific product language with World of Warcraft 1.12.1 and Interface 11200 compatibility wording.
-- Preserved the early command bootstrap, exact native/server providers, solo estimator, recovery controls, and compact meter behavior from version 1.0.6.
+- Added migration from `OctoThreatDB` to `MSThreatDB` without deleting legacy data.
+- Added primary `/msthreat`, `/mst`, and `/msthreatmeter` aliases while retaining `/othreat` and `/octothreat`.
+- Preserved separate realm-and-character profiles and the existing native, server, percentage, and solo-local providers.
 
-## Legacy history
+### Legacy history
 
 Versions **1.0.0 through 1.0.6** were published under the **OctoThreat** name.
-
-### 1.0.6
-
-- Replaced Lua 5.1-style vararg forwarding with fixed-arity protected calls compatible with the WoW 1.12 Lua runtime.
-- Added an early slash-command bootstrap and load-stage diagnostics.
-- Retried guarded initialization during addon load, login, world entry, and the first slash command.
-
-### 1.0.5
-
-- Added realm-and-character keyed profiles.
-- Separated settings, positions, provider preferences, and last-fight history between characters.
-- Restarted all transient providers after character changes.
-
-### 1.0.4
-
-- Added the header refresh button.
-- Improved combat latching, stealth-heavy class behavior, visibility, provider retention, and server-packet diagnostics.
-
-### 1.0.3
-
-- Added settings-safe refresh and automatic stale-data recovery after group changes.
-
-### 1.0.2
-
-- Added the clearly marked local solo threat estimator and solo fight recording.
-
-### 1.0.1
-
-- Fixed sparse old-client roster arrays and hardened row rendering.
-
-### 1.0.0
-
-- Initial release with native and server threat providers, compact sorted rows, aggro warnings, TPS, fight reports, and configuration UI.

@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: |cff888888MS Threat Legacy Migration|r
-## Notes: Temporary saved-variable bridge for upgrading OctoThreat 1.0.6 to MS Threat 1.0.7.
+## Notes: Temporary saved-variable bridge for upgrading OctoThreat 1.0.6 to MS Threat 1.0.8.
 ## Author: MoobStack
-## Version: 1.0.7
+## Version: 1.0.8
 ## SavedVariables: OctoThreatDB
 
 OctoThreat_Migration.lua
