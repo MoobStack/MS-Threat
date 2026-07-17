@@ -1,6 +1,6 @@
 # MS Threat
 
-**MS Threat** is a lightweight, standalone current-target threat meter published by **MoobStack**. It sorts available party, raid, player, and optional pet threat data into one compact header with dynamically inserted rows, while keeping separate settings and fight history for every realm-and-character profile.
+**MS Threat** is a lightweight, standalone current-target threat meter. It sorts available party, raid, player, and optional pet threat data into one compact header with dynamically inserted rows, while keeping separate settings and fight history for every realm-and-character profile.
 
 - **Version:** 1.0.8
 - **Publisher:** MoobStack
