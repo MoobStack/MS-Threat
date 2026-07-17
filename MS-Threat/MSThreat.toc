@@ -1,0 +1,16 @@
+## Interface: 11200
+## Title: |cff55c8ffMS Threat|r
+## Notes: Clean current-target threat meter with isolated character profiles, independent threat providers, solo estimates, and recovery controls for the World of Warcraft 1.12.1 client.
+## Author: MoobStack
+## Version: 1.0.7
+## SavedVariables: MSThreatDB
+## OptionalDeps: OctoThreat
+## X-Category: Combat
+## X-Publisher: MoobStack
+## X-Website: https://github.com/MoobStack/MS-Threat
+## X-Compatible-With: World of Warcraft 1.12.1
+
+MSThreat_Bootstrap.lua
+MSThreat_Core.lua
+MSThreat_Local.lua
+MSThreat_UI.lua

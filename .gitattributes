@@ -1,0 +1,8 @@
+# Exclude markdown files from the generated download zip
+*.md export-ignore
+README.md export-ignore
+docs/ export-ignore
+
+# You can also exclude GitHub configuration files
+.gitattributes export-ignore
+.gitignore export-ignore
